@@ -1,0 +1,217 @@
+# Authentication configuration
+auth:
+  # - login: enter Proton credentials via go-proton-api
+  # - browser: token extraction via browser
+  # - rclone: paste rclone config
+  # See docs/authentication.md
+  method: "login"
+
+  # Encrypted vault for secure token storage (AES-256-GCM)
+  # Key is stored in OS keychain (desktop) or Docker secret (containers)
+  vault:
+    path: "sessions/vault.enc"
+    keychain:
+      service: "lumo-tamer"
+      account: "vault-key"
+
+    # Fallback key file path when OS keychain is unavailable (e.g., Docker, headless servers)
+    # WARNING: use keyFilePath with Docker Swarm secrets or another secrets management tool for production environments
+    keyFilePath: "/run/secrets/lumo-vault-key"
+
+  # Auto-refresh: automatically refresh tokens before they expire
+  autoRefresh:
+    # Enable automatic token refresh
+    enabled: true
+    # Refresh interval in hours (1-24)
+    intervalHours: 20
+    # Refresh tokens on 401 errors
+    onError: true
+
+  # Login-specific config (only used when method: login)
+  login:
+    # Path to proton-auth Go binary
+    binaryPath: "./dist/proton-auth"
+    # Headers to help avoid CAPTCHA - see docs/authentication.md
+    appVersion: "macos-drive@1.0.0-alpha.1+rclone"
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+
+# Shared Logging Configuration (can be overridden in server/cli sections)
+log:
+  # Levels: trace, debug, info, warn, error, fatal
+  level: "warn"
+  # "stdout" or "file"
+  target: "stdout"
+  # Log user/assistant message content (disabled by default to preserve privacy)
+  messageContent: false
+
+# Shared Conversations Configuration (can be overridden in server/cli sections)
+# Note: In-memory conversation storage is always active regardless of sync settings
+# - do they still work/make sense with upstream store?
+# - can they still be overwritten for cli/server? (ie. overwriting dbpath doesn't make sense if sync enabled, does it otherwise?)
+conversations:
+  # Path for IndexedDB SQLite files (used when useUpstreamStorage is true)
+  databasePath: "sessions/"
+
+  # WORKAROUND for clients without conversation_id support (e.g., Home Assistant).
+  # Derives conversation ID from the `user` field in the request.
+  # Home Assistant sends its internal conversation_id as user, making it unique per chat session.
+  # WARNING: May incorrectly merge unrelated conversations with same "user" field. Ignored if `user` is absent.
+  deriveIdFromUser: false
+
+  # Use fallback in-memory store instead of the primary store
+  # When true, uses the legacy in-memory store (will be removed in future).
+  # When false (default), uses the primary Redux + IndexedDB store.
+  useFallbackStore: true
+
+  # Enable syncing conversations to Proton servers (requires browser auth)
+  enableSync: false
+
+  # Project name for conversations (created if doesn't exist)
+  projectName: lumo-tamer
+
+# Shared Commands Configuration (can be overridden in server/cli sections)
+commands:
+  # Enable slash commands (/save, /help, /logout, etc.)
+  # When disabled, commands are ignored and treated as regular messages.
+  enabled: false
+  # Alternative wakeword for commands
+  # Useful for voice assistants or clients that have /commands themselves.
+  # Example: "tamer help" instead of "/help"
+  wakeword: "tamer"
+
+# Server Configuration
+server:
+  port: 3003
+  apiKey: "<YOUR_API_KEY_HERE>"
+  # Model echoed back when a request omits the model field.
+  apiModelName: "lumo"
+
+  # Model tier selection (Lumo 2.0).
+  # The inbound OpenAI "model" field picks the tier:
+  #   lumo      -> Proton routes automatically
+  #   lumo-lite -> Lumo 2.0 Lite (fast, everyday)
+  #   lumo-max  -> Lumo 2.0 Max (high-performance)
+  # Tier used when a request omits the model field (auto = lumo / Proton routes):
+  defaultModelTier: "auto"
+  # Models advertised on /v1/models and accepted in the "model" field.
+  # Unknown models are rejected with HTTP 400.
+  allowedModels:
+    - "lumo"
+    - "lumo-lite"
+    - "lumo-max"
+
+  # Thinking / reasoning mode (Lumo 2.0).
+  reasoning:
+    # Used when the client does not send reasoning_effort. "none" or "high".
+    # (Inbound reasoning_effort low/medium/high all map to high.)
+    default: "none"
+    # Forward Lumo's thinking to the client
+    surfaceThinking: false
+
+  # Max request body size
+  # Increase if clients send larger tool/context payloads, but be aware:
+  # 360kb (for a typical request, containing mainly ASCII characters)
+  # translates to roughly 22.5K tokens, which is Lumo's "warning level" on context size.
+  bodyLimit: "360kb"
+
+  # Prometheus metrics endpoint
+  metrics:
+    # Enable /metrics endpoint
+    enabled: false
+    # Include Node.js runtime metrics (memory, CPU, event loop, etc.)
+    collectDefaultMetrics: true
+    # Prefix for all metric names
+    prefix: "lumo_"
+
+  # Enable Lumo's native web_search tool (and other external tools: weather, stock, cryptocurrency)
+  enableWebSearch: true
+
+  # Custom tool detection for API clients
+  # Enable detection of JSON tool calls in Lumo's responses
+  # WARNING: When enabled, Lumo can trigger actions via API clients!
+  customTools:
+    enabled: true
+
+    # Prefix added to custom tool names to distinguish from Lumo's native tools.
+    # Applied to tool definitions sent to Lumo, stripped from tool calls returned to client.
+    # Set to "" to disable prefixing.
+    # Prefix gm means Gemello
+    prefix: "gm_"
+
+
+  instructions:
+
+    # Template for assembling instructions.
+    # Uses Handlebars-like syntax: {{varName}}, {{#if varName}}...{{/if}}, {{#if}}...{{else}}...{{/if}}
+    # Available variables:
+    #   - tools: JSON-stringified tool definitions (truthy when tools provided)
+    #   - clientInstructions: system/developer message from request
+    #   - forTools: the forTools block below (pre-interpolated with {{prefix}})
+    #   - fallback: the fallback block below
+    #   - prefix: tool prefix from customTools.prefix
+    template: |
+      {{#if tools}}
+      {{forTools}}
+      {{/if}}
+
+      {{#if clientInstructions}}
+      {{clientInstructions}}
+      {{else}}
+      {{fallback}}
+      {{/if}}
+
+      {{#if tools}}
+      Below are all the custom tools you can use. Remember, all tools prefixed with `{{prefix}}` are custom tools and must be called by outputting the JSON to the user.
+
+      {{tools}}
+      {{/if}}
+
+    # Search/replace patterns applied to client instructions (case-insensitive regex).
+    # Useful for removing or rewriting phrases that may confuse Lumo about tool calling.
+    # Each entry: { pattern: "regex", replacement: "text" } - omit replacement to strip.
+    replacePatterns:
+      - pattern: "(?<=(?:(?:native|custom|internal|external)\\s)?)(?=tool)"
+        replacement: "custom "
+
+
+    # Fallback instructions when no system/developer message is provided in the request
+    fallback: |
+      Always answer in plain text. Don't use tables, quote blocks, lists, etc. Be concise.
+
+    # Instructions prepended when tools are provided in the request.
+    # Can use {{prefix}} variable.
+    forTools: |
+      === CUSTOM TOOL PROTOCOL ===
+      The tools below are CUSTOM tools, prefixed with `{{prefix}}`.
+
+      IMPORTANT: Custom tools are NOT part of your built-in tool system.
+      You MUST call them by outputting JSON as text in a code block to the user, like this:
+      ```json
+      {"name": "{{prefix}}example_tool", "arguments": {"param": "value"}}
+      ```
+      DO NOT try to call custom tools through your internal tool mechanism, it will fail with error:true. If you receive such an error, don't try again with different arguments, but output the JSON as text to the user.
+      DO NOT remove the `{{prefix}}` prefix when calling these tools.
+
+      CRITICAL FORMAT RULE: Always use the EXACT format shown above — a JSON object with "name" and "arguments" keys inside a fenced code block. Do NOT use any other format such as {"type":"function_call",...} or {"type":"function_call_output",...}. Those are system-internal message wrappers that appear in conversation history; they are NOT a valid way to call custom tools. Never imitate them. Always output ONLY {"name": "{{prefix}}tool_name", "arguments": {...}} wrapped in a fenced code block, and make sure the JSON is properly escaped (arguments must be a valid nested object, not a quoted string).
+
+      ONE CALL PER RESPONSE: Output EXACTLY ONE tool call per response. NEVER output two or more JSON code blocks in a single response, and never issue parallel or batched tool calls. Each tool call must be sent alone in its own response, and you must WAIT for the result (delivered as a function_call_output message) before issuing the next call. Sequential execution only. Batching two calls into one response corrupts the protocol and loses calls.
+
+      RESPONSE FORMAT: When you want to execute a tool, your ENTIRE response must be ONLY the JSON code block — no introduction, no explanation, no narration before or after it. NEVER announce what you are "about to do" (e.g. "Zuerst ermittle ich den angemeldeten User:") without immediately emitting the tool call in the SAME response. A response that announces a tool call without containing the call ends the turn and the workflow dies. If you want to explain what you are doing, do it AFTER the tool results come back, not before.
+
+      INCOMPLETE RESULTS: If you expected multiple tool results but received fewer, do NOT proceed on assumptions. Re-check the missing piece with a new tool call instead of drawing conclusions from partial data. Never act on results you did not actually receive.
+
+      The user's system will execute them and return results.
+      === END PROTOCOL ===
+
+    # Where to inject instructions: "first" or "last" user message to Lumo
+    # - first: inject once into first user message (may reduce token usage in multi-turn conversations,
+    #   but Lumo may "forget" instructions in long conversations)
+    # - last: inject into last user message each request (matches WebClient behaviour, might use more tokens, but instructions always fresh)
+    injectInto: "last"
+
+
+    # Bounce instruction sent when Lumo routes a custom tool through its native tool pipeline.
+    # The actual tool call JSON is appended at runtime.
+    forToolBounce: |
+      You tried to call a custom tool using your built-in tool system, but custom tools must be called by outputting JSON text within a code block. Please output the tool call as JSON, like this:
