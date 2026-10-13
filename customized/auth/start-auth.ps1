@@ -27,7 +27,7 @@ function Read-VaultKey {
 }
 
 # Convert the binary vault (sessions/vault.enc) into a Base64 text file
-# (sessions/vault.txt) so it can be transported via clipboard / copy-paste.
+# (sessions/vault.key) so it can be transported via clipboard / copy-paste.
 # Returns the path to the created text file, or $null on failure.
 function Convert-VaultToText {
     $vaultPath = Join-Path -Path (Get-Location).Path -ChildPath 'sessions\vault.enc'
@@ -35,7 +35,7 @@ function Convert-VaultToText {
         Write-Warning "Vault file not found: $vaultPath"
         return $null
     }
-    $textPath = Join-Path -Path (Get-Location).Path -ChildPath 'sessions\vault.txt'
+    $textPath = Join-Path -Path (Get-Location).Path -ChildPath 'sessions\vault.key'
     try {
         $bytes = [IO.File]::ReadAllBytes($vaultPath)
         $base64 = [Convert]::ToBase64String($bytes)
@@ -75,7 +75,8 @@ try {
 
     Write-Host '=== lumo-tamer: Copy default config to dist ==='
     if (-not (Test-Path -Path dist)) { New-Item -ItemType Directory -Path dist | Out-Null }
-    Copy-Item -Path "$repoRoot\customized\auth\config.yaml" -Destination "$repoRoot\dist\config.yaml" -Force
+    Copy-Item -Path "$repoRoot\config.defaults.yaml" -Destination "$repoRoot\config.defaults.yaml.bak" -Force
+    Copy-Item -Path "$repoRoot\customized\auth\config.defaults.yaml" -Destination "$repoRoot\config.defaults.yaml" -Force
 
     Write-Host '=== lumo-tamer: Link CLI globally ==='
     & npm link
@@ -105,7 +106,9 @@ try {
     }
     else {
         # Use a temporary Chrome profile under customized/.profile so it can be removed later
-        $userDataDir = Join-Path -Path (Get-Location).Path -ChildPath 'customized\.profile'
+        $userDataDir = Join-Path -Path $repoRoot -ChildPath 'customized/.profile'
+        New-Item -ItemType Directory -Path $userDataDir -Force | Out-Null
+        $userDataDir = Resolve-Path -Path $userDataDir | Select-Object -ExpandProperty Path
         $flags = @(
             "--remote-debugging-address=127.0.0.1",
             "--remote-debugging-port=9222",
@@ -149,7 +152,7 @@ try {
     if ($vaultTextPath) {
         Write-Host "Base64 vault written to: $vaultTextPath"
         Write-Host 'Copy its contents to the Linux server and decode with:'
-        Write-Host "  base64 -d sessions/vault.txt > sessions/vault.enc"
+        Write-Host "  base64 -d sessions/vault.key > sessions/vault.enc"
     }
 
     Write-Host ''
@@ -167,7 +170,7 @@ try {
     }
 
     if ($vaultTextPath) {
-        $vaultOutPath = Join-Path -Path $serverDir -ChildPath 'vault.txt'
+        $vaultOutPath = Join-Path -Path $serverDir -ChildPath 'vault.key'
         Copy-Item -Path $vaultTextPath -Destination $vaultOutPath -Force
         Write-Host "Base64 vault copied to: $vaultOutPath"
     }

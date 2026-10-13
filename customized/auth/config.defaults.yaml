@@ -1,0 +1,311 @@
+# Authentication configuration
+auth:
+  # - login: enter Proton credentials via go-proton-api
+  # - browser: token extraction via browser
+  # - rclone: paste rclone config
+  # See docs/authentication.md
+  method: "login"
+
+  # Encrypted vault for secure token storage (AES-256-GCM)
+  # Key is stored in OS keychain (desktop) or Docker secret (containers)
+  vault:
+    path: "sessions/vault.enc"
+    keychain:
+      service: "lumo-tamer"
+      account: "vault-key"
+
+    # Fallback key file path when OS keychain is unavailable (e.g., Docker, headless servers)
+    # WARNING: use keyFilePath with Docker Swarm secrets or another secrets management tool for production environments
+    keyFilePath: "/run/secrets/lumo-vault-key"
+
+  # Auto-refresh: automatically refresh tokens before they expire
+  autoRefresh:
+    # Enable automatic token refresh
+    enabled: true
+    # Refresh interval in hours (1-24)
+    intervalHours: 20
+    # Refresh tokens on 401 errors
+    onError: true
+
+  # Browser-specific config (only used when method: browser)
+  browser:
+    # Chrome DevTools Protocol endpoint for remote browser
+    cdpEndpoint: "http://localhost:9222"
+    # use this if you're running both app and browser docker containers:
+    # cdpEndpoint: "http://browser:9222"
+
+  # Login-specific config (only used when method: login)
+  login:
+    # Path to proton-auth Go binary
+    binaryPath: "./dist/proton-auth"
+    # Headers to help avoid CAPTCHA - see docs/authentication.md
+    appVersion: "macos-drive@1.0.0-alpha.1+rclone"
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# Test/development configuration
+test:
+  mock:
+    # Enable mock mode: bypass authentication, return simulated Lumo responses
+    enabled: false
+    # Scenario: success, error, timeout, rejected, toolCall, misroutedToolCall, weeklyLimit, cycle
+    scenario: "success"
+
+# Shared Logging Configuration (can be overridden in server/cli sections)
+log:
+  # Levels: trace, debug, info, warn, error, fatal
+  level: "info"
+  # "stdout" or "file"
+  target: "stdout"
+  # Used when target is "file"
+  filePath: "lumo-tamer.log"
+  # Log user/assistant message content (disabled by default to preserve privacy)
+  messageContent: false
+
+# Shared Conversations Configuration (can be overridden in server/cli sections)
+# Note: In-memory conversation storage is always active regardless of sync settings
+# - do they still work/make sense with upstream store?
+# - can they still be overwritten for cli/server? (ie. overwriting dbpath doesn't make sense if sync enabled, does it otherwise?)
+conversations:
+  # Path for IndexedDB SQLite files (used when useUpstreamStorage is true)
+  databasePath: "sessions/"
+
+  # WORKAROUND for clients without conversation_id support (e.g., Home Assistant).
+  # Derives conversation ID from the `user` field in the request.
+  # Home Assistant sends its internal conversation_id as user, making it unique per chat session.
+  # WARNING: May incorrectly merge unrelated conversations with same "user" field. Ignored if `user` is absent.
+  deriveIdFromUser: false
+
+  # Use fallback in-memory store instead of the primary store
+  # When true, uses the legacy in-memory store (will be removed in future).
+  # When false (default), uses the primary Redux + IndexedDB store.
+  useFallbackStore: true
+
+  # Enable syncing conversations to Proton servers (requires browser auth)
+  enableSync: true
+  # Project name for conversations (created if doesn't exist)
+  projectName: lumo-tamer
+
+# Shared Commands Configuration (can be overridden in server/cli sections)
+commands:
+  # Enable slash commands (/save, /help, /logout, etc.)
+  # When disabled, commands are ignored and treated as regular messages.
+  enabled: true
+  # Alternative wakeword for commands
+  # Useful for voice assistants or clients that have /commands themselves.
+  # Example: "tamer help" instead of "/help"
+  wakeword: "tamer"
+
+# Server Configuration
+server:
+  port: 3003
+  apiKey: "your-secret-api-key-here"
+  # Model echoed back when a request omits the model field.
+  apiModelName: "lumo"
+
+  # Model tier selection (Lumo 2.0).
+  # The inbound OpenAI "model" field picks the tier:
+  #   lumo      -> Proton routes automatically
+  #   lumo-lite -> Lumo 2.0 Lite (fast, everyday)
+  #   lumo-max  -> Lumo 2.0 Max (high-performance)
+  # Tier used when a request omits the model field (auto = lumo / Proton routes):
+  defaultModelTier: "auto"
+  # Models advertised on /v1/models and accepted in the "model" field.
+  # Unknown models are rejected with HTTP 400.
+  allowedModels:
+    - "lumo"
+    - "lumo-lite"
+    - "lumo-max"
+
+  # Thinking / reasoning mode (Lumo 2.0).
+  reasoning:
+    # Used when the client does not send reasoning_effort. "none" or "high".
+    # (Inbound reasoning_effort low/medium/high all map to high.)
+    default: "none"
+    # Forward Lumo's thinking to the client
+    surfaceThinking: false
+
+  # Max request body size
+  # Increase if clients send larger tool/context payloads, but be aware:
+  # 360kb (for a typical request, containing mainly ASCII characters)
+  # translates to roughly 22.5K tokens, which is Lumo's "warning level" on context size.
+  bodyLimit: "360kb"
+
+  # Prometheus metrics endpoint
+  metrics:
+    # Enable /metrics endpoint
+    enabled: false
+    # Include Node.js runtime metrics (memory, CPU, event loop, etc.)
+    collectDefaultMetrics: true
+    # Prefix for all metric names
+    prefix: "lumo_"
+
+  # Enable Lumo's native web_search tool (and other external tools: weather, stock, cryptocurrency)
+  enableWebSearch: false
+
+  # Custom tool detection for API clients
+  # Enable detection of JSON tool calls in Lumo's responses
+  # WARNING: When enabled, Lumo can trigger actions via API clients!
+  customTools:
+    enabled: false
+
+    # Prefix added to custom tool names to distinguish from Lumo's native tools.
+    # Applied to tool definitions sent to Lumo, stripped from tool calls returned to client.
+    # Set to "" to disable prefixing.
+    prefix: "user:"
+
+
+  instructions:
+
+    # Template for assembling instructions.
+    # Uses Handlebars-like syntax: {{varName}}, {{#if varName}}...{{/if}}, {{#if}}...{{else}}...{{/if}}
+    # Available variables:
+    #   - tools: JSON-stringified tool definitions (truthy when tools provided)
+    #   - clientInstructions: system/developer message from request
+    #   - forTools: the forTools block below (pre-interpolated with {{prefix}})
+    #   - fallback: the fallback block below
+    #   - prefix: tool prefix from customTools.prefix
+    template: |
+      {{#if tools}}
+      {{forTools}}
+      {{/if}}
+
+      {{#if clientInstructions}}
+      {{clientInstructions}}
+      {{else}}
+      {{fallback}}
+      {{/if}}
+
+      {{#if tools}}
+      Below are all the custom tools you can use. Remember, all tools prefixed with `{{prefix}}` are custom tools and must be called by outputting the JSON to the user.
+
+      {{tools}}
+      {{/if}}
+
+    # Search/replace patterns applied to client instructions (case-insensitive regex).
+    # Useful for removing or rewriting phrases that may confuse Lumo about tool calling.
+    # Each entry: { pattern: "regex", replacement: "text" } - omit replacement to strip.
+    replacePatterns:
+      - pattern: "(?<=(?:(?:native|custom|internal|external)\\s)?)(?=tool)"
+        replacement: "custom "
+
+
+    # Fallback instructions when no system/developer message is provided in the request
+    fallback: |
+      Always answer in plain text. Don't use tables, quote blocks, lists, etc. Be concise.
+
+    # Instructions prepended when tools are provided in the request.
+    # Can use {{prefix}} variable.
+    forTools: |
+      === CUSTOM TOOL PROTOCOL ===
+      The tools below are CUSTOM tools, prefixed with `{{prefix}}`.
+
+      IMPORTANT: Custom tools are NOT part of your built-in tool system.
+      You MUST call them by outputting JSON as text in a code block to the user, like this:
+      ```json
+      {"name": "{{prefix}}example_tool", "arguments": {"param": "value"}}
+      ```
+      DO NOT try to call custom tools through your internal tool mechanism, it will fail with error:true. If you receive such an error, don't try again with different arguments, but output the JSON as text to the user.
+      DO NOT remove the `{{prefix}}` prefix when calling these tools.
+
+      The user's system will execute them and return results.
+      === END PROTOCOL ===
+
+
+    # Where to inject instructions: "first" or "last" user message to Lumo
+    # - first: inject once into first user message (may reduce token usage in multi-turn conversations,
+    #   but Lumo may "forget" instructions in long conversations)
+    # - last: inject into last user message each request (matches WebClient behaviour, might use more tokens, but instructions always fresh)
+    injectInto: "first"
+
+
+    # Bounce instruction sent when Lumo routes a custom tool through its native tool pipeline.
+    # The actual tool call JSON is appended at runtime.
+    forToolBounce: |
+      You tried to call a custom tool using your built-in tool system, but custom tools must be called by outputting JSON text within a code block. Please output the tool call as JSON, like this:
+
+
+
+
+# CLI Configuration
+cli:
+  log:
+    target: "file"
+    filePath: "lumo-tamer-cli.log"
+
+  # Enable Lumo's native web_search tool (and other external tools: weather, stock, cryptocurrency)
+  enableWebSearch: false
+
+  # Local actions: code block detection and execution
+  localActions:
+    # Enable code block detection (```bash, ```read, ```edit, etc.)
+    # WARNING: When enabled, Lumo can trigger actions on your machine!
+    enabled: false
+
+    # ```read blocks: Lumo can read local files without user confirmation
+    fileReads:
+      # Enable ```read blocks
+      # Note that if this is false, Lumo can still ask to read a file using shell tools (ie. cat)
+      enabled: true
+      # Max file size. Reading files larger than this fail with an error.
+      # 512kb translates to roughly 32K tokens (Lumo's "warning level" on context size).
+      maxFileSize: "360kb"
+
+    # Executors for code block execution
+    # Maps language tag -> [command, ...args]. Code is appended as last arg.
+    # Override to restrict or extend
+    executors:
+      bash: ["bash", "-c"]
+      python: ["python", "-c"]
+      sh: ["sh", "-c"]
+      # zsh: ["zsh", "-c"]
+      # powershell: ["powershell", "-Command"]
+      # ps1: ["powershell", "-Command"]
+      # cmd: ["cmd", "/c"]
+      # node: ["node", "-e"]
+      # javascript: ["node", "-e"]
+      # js: ["node", "-e"]
+      # perl: ["perl", "-e"]
+
+  instructions:
+    template: |
+      You are a command line assistant. Your output will be read in a terminal. Keep the formatting to a minimum and be concise.
+
+      {{#if localActions}}
+      {{forLocalActions}}
+      {{/if}}
+
+    # Injected as {{forLocalActions}} when localActions.enabled=true
+    forLocalActions: |
+      You can read, edit and create files, and you can execute {{executors}} commands on the user's machine.
+      To execute code, use a code block like ```python. The user will be prompted to execute it and the result will be returned to you. Don't explain the user can execute commands, it will be handled automatically. Keep commands simple and safe.
+      To read files, use a ```read block with one file path per line. Contents will be returned to you automatically without prompting the user. Example:
+      ```read
+      README.md
+      quickstart.txt
+      ```
+      To create a new file, use a ```create block. The user will be prompted to confirm. Format:
+      ```create
+      === FILE: path/to/new-file.txt
+      file contents here
+      ```
+      To edit an existing file, use a ```edit block (one file per block). Read the file first if needed. Format:
+      ```edit
+      === FILE: path/to/file.txt
+      <<<<<<< SEARCH
+      exact old text
+      =======
+      new text
+      >>>>>>> REPLACE
+      ```
+    # Where to inject instructions: "first" or "last" user message to Lumo
+    # - first: inject once into first user message (may reduce token usage in multi-turn conversations,
+    #   but Lumo may "forget" instructions in long conversations)
+    # - last: inject into last user message each request (matches WebClient behaviour, might use more tokens, but instructions always fresh)
+    injectInto: "first"
+
+    forToolBounce: |
+      You tried to execute an action using your built-in tool system, but these actions must be called by providing a code block. Use for example:
+      ```read
+      README.md
+      ```
+      Instead of calling a tool like this:

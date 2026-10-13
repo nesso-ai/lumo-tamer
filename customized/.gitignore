@@ -1,4 +1,5 @@
 !app/**/*
 app/sessions/lumo-vault-key
+app/sessions/vault.key
 .profile
 tools/go
