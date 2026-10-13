@@ -200,6 +200,9 @@ finally {
         }
     }
 
+    & npm unlink -g lumo-tamer
+    if ($LASTEXITCODE -ne 0) { Write-Warning 'npm unlink returned non-zero exit code, continuing' }
+
     if (Get-Location) { Pop-Location }
 }
 
