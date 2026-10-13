@@ -1,0 +1,22 @@
+public-resources:
+  lumo-bridge:
+    name: Lumo Bridge
+    mode: http
+    full-domain: lumo-bridge.nessoai.net
+    enabled: true
+    ssl: true
+    policy: lumo-bridge
+    maintenance:
+      enabled: true
+      type: automatic
+      title: We'll be back soon
+      message: We are currently performing scheduled maintenance. Please check back soon.
+    targets:
+      - site: nuvela
+        hostname: 10.0.40.20
+        method: http
+        port: 65045
+        healthcheck:
+          hostname: 10.0.40.20
+          port: 65045
+          path: /

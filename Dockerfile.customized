@@ -84,3 +84,5 @@ ENTRYPOINT ["sh", "-c", "\
 EXPOSE 3003
 
 CMD ["server"]
+
+LABEL org.opencontainers.image.source https://github.com/nesso-ai/lumo-tamer
