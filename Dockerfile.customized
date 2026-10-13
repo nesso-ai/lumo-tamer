@@ -59,9 +59,9 @@ COPY --from=go-builder /build/proton-auth ./dist/proton-auth
 # Make tamer available as command
 RUN npm link
 
-# Path to a bind-mounted Base64 vault (e.g. sessions/vault.txt). If present,
+# Path to a bind-mounted Base64 vault (e.g. sessions/vault.key). If present,
 # it is decoded back to the binary vault (sessions/vault.enc) on startup.
-ENV VAULT_B64_FILE=/app/sessions/vault.txt
+ENV VAULT_B64_FILE=/app/sessions/vault.key
 
 # Command aliases for tamer subcommands auth, server, cli
 #   docker compose run --rm -it tamer auth
