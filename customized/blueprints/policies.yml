@@ -4,17 +4,7 @@ public-policies:
     sso: false
     apply-rules: true
     rules:
-      # Deny access to any PHP files, because we don't run any PHP applications on our servers
-      - action: deny
-        match: path
-        value: "*.php"
-        priority: 20
-      # Allow all from West Europe
-      - action: allow
-        match: country
-        value: DE
-        priority: 50
-      # Block all other Countries, because we only want to allow access from EU countries
+      # Block all Countries, because we only allow from Hetzner internal Network
       - action: deny
         match: country
         value: ALL
