@@ -105,15 +105,15 @@ server:
   reasoning:
     # Used when the client does not send reasoning_effort. "none" or "high".
     # (Inbound reasoning_effort low/medium/high all map to high.)
-    default: "none"
+    default: "high"
     # Forward Lumo's thinking to the client
-    surfaceThinking: false
+    surfaceThinking: true
 
   # Max request body size
   # Increase if clients send larger tool/context payloads, but be aware:
   # 360kb (for a typical request, containing mainly ASCII characters)
   # translates to roughly 22.5K tokens, which is Lumo's "warning level" on context size.
-  bodyLimit: "360kb"
+  bodyLimit: "10mb"
 
   # Prometheus metrics endpoint
   metrics:
