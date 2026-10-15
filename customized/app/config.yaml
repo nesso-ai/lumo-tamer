@@ -137,7 +137,7 @@ server:
     # Applied to tool definitions sent to Lumo, stripped from tool calls returned to client.
     # Set to "" to disable prefixing.
     # Prefix gm means Gemello
-    prefix: "gm_"
+    prefix: "user:"
 
 
   instructions:
